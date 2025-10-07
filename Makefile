@@ -11,7 +11,7 @@ CONTEXT ?= .
 DOCKER_CONTEXT ?= colima
 MANIFESTS_DIR ?= k8s
 
-.PHONY: help minikube-start minikube-stop minikube-status minikube-dashboard minikube-metrics-enable minikube-metrics-disable minikube-metrics-status kube-apply kube-delete docker-build docker-env colima-start colima-stop colima-status docker-context-colima docker-context-current app-build app-load app-deploy app-undeploy app-status app-logs app-port-forward app-service-url deploy-all deploy-dev cleanup-all cleanup-dev
+.PHONY: help minikube-start minikube-stop minikube-status minikube-dashboard minikube-metrics-enable minikube-metrics-disable minikube-metrics-status kube-apply kube-delete docker-build docker-env colima-start colima-stop colima-status docker-context-colima docker-context-current app-build app-load app-deploy app-undeploy app-status app-logs app-port-forward app-service-url deploy-all deploy-dev cleanup-all cleanup-dev status port-forward-status
 
 .DEFAULT_GOAL := help
 
@@ -171,4 +171,60 @@ cleanup-dev: ## Development cleanup: same as cleanup-all (alias for convenience)
 	@echo "Running development cleanup..."
 	$(MAKE) cleanup-all
 
+
+
+status: ## Show full development environment status (Colima, Docker, Minikube, Kubernetes, App)
+	@echo "=== Docker Context ==="
+	docker context show || true
+	@echo ""
+	@echo "=== Colima Status ==="
+	colima status || true
+	@echo ""
+	@echo "=== Minikube Status ==="
+	minikube status || true
+	@echo ""
+	@echo "=== Kubernetes Context ==="
+	kubectl config current-context 2>/dev/null || echo "kubectl not configured or cluster not running"
+	@echo ""
+	@echo "=== Cluster Nodes ==="
+	kubectl get nodes 2>/dev/null || echo "No nodes found or cluster not running"
+	@echo ""
+	@echo "=== Namespaces ==="
+	kubectl get ns 2>/dev/null || echo "Cannot list namespaces"
+	@echo ""
+	@echo "=== Metrics (if available) ==="
+	- kubectl top nodes
+	- kubectl top pods -A
+	@echo ""
+	@echo "=== Port Forward Status ==="
+	- $(MAKE) port-forward-status
+	@echo ""
+	@echo "=== Application ==="
+	$(MAKE) app-status
+
+port-forward-status: ## Check status of kubectl port-forward for flask-app-service on localhost:8080
+	@echo "Checking for kubectl port-forward process..."
+	@pgrep -fl "kubectl port-forward.*flask-app-service.*8080:5050" >/dev/null 2>&1 \
+		&& pgrep -fl "kubectl port-forward.*flask-app-service.*8080:5050" \
+		|| echo "No matching kubectl port-forward process running"
+	@echo ""
+	@echo "Checking if port 8080 is listening locally..."
+	@if command -v lsof >/dev/null 2>&1; then \
+		if lsof -nP -iTCP:8080 -sTCP:LISTEN >/dev/null 2>&1; then \
+			lsof -nP -iTCP:8080 -sTCP:LISTEN; \
+		else \
+			echo "ERROR: Port 8080 is not listening locally"; \
+			exit 1; \
+		fi; \
+	elif command -v nc >/dev/null 2>&1; then \
+		if nc -z localhost 8080 >/dev/null 2>&1; then \
+			echo "Port 8080 is listening (checked via nc)"; \
+		else \
+			echo "ERROR: Port 8080 is not listening locally"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "ERROR: Neither lsof nor nc available to check port 8080"; \
+		exit 1; \
+	fi
 

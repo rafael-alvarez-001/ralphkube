@@ -135,6 +135,37 @@ make kube-apply NAMESPACE=staging
 make minikube-metrics-status
 ```
 
+### Environment Status and Port-Forward Checks
+
+The `Makefile` provides comprehensive status checks for your local dev environment and port forwarding.
+
+#### Status (Aggregated)
+```bash
+make status
+```
+This prints:
+- Docker context and Colima status
+- Minikube status
+- Kubernetes context, nodes, namespaces, and metrics (if metrics-server is enabled)
+- Port-forward status for `flask-app-service` on `localhost:8080`
+- Application deployment status (deployments, pods, services)
+
+Notes:
+- If port 8080 is not listening locally, you'll see: `ERROR: Port 8080 is not listening locally`.
+- The `status` target logs the error but continues running the remaining checks.
+
+#### Port-Forward Status (Standalone)
+```bash
+make port-forward-status
+```
+This checks:
+- Whether a `kubectl port-forward service/flask-app-service 8080:5050` process is running
+- Whether `localhost:8080` is listening (using `lsof`, falling back to `nc` if available)
+
+Exit behavior:
+- Returns non-zero exit code if 8080 is not listening (or neither `lsof` nor `nc` is available).
+- Use the aggregated `make status` if you prefer the rest of the checks to continue even when this fails.
+
 ### Notes
 - `kube-apply` and `kube-delete` expect Kubernetes YAMLs under the `k8s/` directory
 - `minikube-start` uses `--driver=docker` and will use whatever Docker context your CLI is set to; ensure it is `colima`
