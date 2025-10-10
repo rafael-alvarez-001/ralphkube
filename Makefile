@@ -11,7 +11,7 @@ CONTEXT ?= .
 DOCKER_CONTEXT ?= colima
 MANIFESTS_DIR ?= k8s
 
-.PHONY: help minikube-start minikube-stop minikube-status minikube-dashboard minikube-metrics-enable minikube-metrics-disable minikube-metrics-status kube-apply kube-delete docker-build docker-env colima-start colima-stop colima-status docker-context-colima docker-context-current app-build app-load app-deploy app-undeploy app-status app-logs app-port-forward app-service-url deploy-all deploy-dev cleanup-all cleanup-dev status port-forward-status
+.PHONY: help minikube-start minikube-stop minikube-status minikube-dashboard minikube-metrics-enable minikube-metrics-disable minikube-metrics-status kube-apply kube-delete docker-build docker-env colima-start colima-stop colima-status docker-context-colima docker-context-current app-build app-load app-deploy app-undeploy app-status app-logs app-port-forward app-service-url deploy-all deploy-dev cleanup-all cleanup-dev cleanup-complete status port-forward-status
 
 .DEFAULT_GOAL := help
 
@@ -20,7 +20,7 @@ help: ## Show this help
 
 ##@ Colima
 colima-start: ## Start Colima runtime
-	colima start
+	colima start --cpu 4 --memory 8 --disk 60
 
 colima-stop: ## Stop Colima runtime
 	colima stop
@@ -36,7 +36,7 @@ docker-context-current: ## Show current Docker context
 
 ##@ Minikube
 minikube-start: ## Start minikube with Docker driver (uses Colima Docker context)
-	minikube start --driver=docker --container-runtime=containerd --addons=metrics-server
+	minikube start --driver=docker --container-runtime=containerd --kubernetes-version=v1.30.6 --cpus=4 --memory=6144 --wait=apiserver,system_pods,kubelet,default_sa --wait-timeout=10m -v=3
 
 minikube-stop: ## Stop minikube cluster
 	minikube stop
@@ -118,13 +118,16 @@ app-service-url: ## Get the minikube service URL for external access
 	@echo "Getting minikube service URL..."
 	minikube service flask-app-service --url
 
-deploy-all: ## Complete deployment: start colima, start minikube, deploy app, port-forward, show status
+deploy-all: ## Complete deployment: start colima, start minikube, enable metrics, deploy app, port-forward, show status
 	@echo "Starting complete deployment process..."
 	@echo "Starting Colima runtime..."
 	$(MAKE) colima-start
 	@echo ""
 	@echo "Starting minikube..."
 	$(MAKE) minikube-start
+	@echo ""
+	@echo "Enabling metrics-server..."
+	$(MAKE) minikube-metrics-enable
 	@echo ""
 	@echo "Deploying application..."
 	$(MAKE) app-deploy
@@ -170,6 +173,54 @@ cleanup-all: ## Complete cleanup: stop port-forward, undeploy app, stop minikube
 cleanup-dev: ## Development cleanup: same as cleanup-all (alias for convenience)
 	@echo "Running development cleanup..."
 	$(MAKE) cleanup-all
+
+cleanup-complete: ## Complete nuclear cleanup: removes ALL Docker images, containers, minikube VM, and Colima
+	@echo "⚠️  WARNING: This will completely remove ALL Docker images, containers, minikube VM, and Colima!"
+	@echo "This action cannot be undone."
+	@echo ""
+	@echo "Starting complete nuclear cleanup..."
+	@echo ""
+	@echo "1. Stopping any active port forwarding..."
+	@pkill -f "kubectl port-forward" 2>/dev/null || echo "No port forwarding processes found"
+	@echo ""
+	@echo "2. Undeploying application..."
+	$(MAKE) app-undeploy
+	@echo ""
+	@echo "3. Deleting minikube cluster completely..."
+	minikube delete || echo "Minikube cluster not found or already deleted"
+	@echo ""
+	@echo "4. Removing ALL Docker containers..."
+	docker container prune -f || echo "No containers to remove"
+	docker rm -f $$(docker ps -aq) 2>/dev/null || echo "No containers to remove"
+	@echo ""
+	@echo "5. Removing ALL Docker images..."
+	docker image prune -a -f || echo "No images to remove"
+	docker rmi -f $$(docker images -aq) 2>/dev/null || echo "No images to remove"
+	@echo ""
+	@echo "6. Removing ALL Docker volumes..."
+	docker volume prune -f || echo "No volumes to remove"
+	docker volume rm $$(docker volume ls -q) 2>/dev/null || echo "No volumes to remove"
+	@echo ""
+	@echo "7. Removing ALL Docker networks (except default)..."
+	docker network prune -f || echo "No networks to remove"
+	@echo ""
+	@echo "8. Cleaning up Docker system..."
+	docker system prune -a -f --volumes || echo "Docker system already clean"
+	@echo ""
+	@echo "9. Stopping and removing Colima runtime..."
+	colima stop || echo "Colima not running"
+	yes | colima delete || echo "Colima instance not found"
+	@echo ""
+	@echo "10. Resetting Docker context to default..."
+	docker context use default || echo "Already using default context"
+	@echo ""
+	@echo "=== NUCLEAR CLEANUP COMPLETE ==="
+	@echo "✅ All Docker images, containers, volumes, and networks removed"
+	@echo "✅ Minikube cluster completely deleted"
+	@echo "✅ Colima runtime stopped and removed"
+	@echo "✅ Docker context reset to default"
+	@echo ""
+	@echo "Your system is now completely clean. Run 'make deploy-all' to start fresh."
 
 
 
