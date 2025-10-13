@@ -1,0 +1,177 @@
+.PHONY: setup check-brew check-colima check-docker check-minikube install-brew install-colima install-docker install-minikube start-minikube stop-minikube bootstrap renew-certs clean up down help
+
+# Default target
+setup: check-colima check-docker check-minikube
+	@echo "✅ Setup complete! colima, docker, and minikube are installed."
+
+# Check if colima is installed, install if not
+check-colima:
+	@echo "🔍 Checking for colima..."
+	@if command -v colima >/dev/null 2>&1; then \
+		echo "✅ colima is already installed"; \
+		colima version; \
+	else \
+		echo "❌ colima not found. Installing..."; \
+		$(MAKE) install-colima; \
+	fi
+
+# Check if docker is installed, install if not
+check-docker:
+	@echo "🔍 Checking for docker..."
+	@if command -v docker >/dev/null 2>&1; then \
+		echo "✅ docker is already installed"; \
+		docker --version; \
+	else \
+		echo "❌ docker not found. Installing..."; \
+		$(MAKE) install-docker; \
+	fi
+
+# Check if Homebrew is installed, install if not
+check-brew:
+	@echo "🔍 Checking for Homebrew..."
+	@if command -v brew >/dev/null 2>&1; then \
+		echo "✅ Homebrew is already installed"; \
+		brew --version; \
+	else \
+		echo "❌ Homebrew not found. Installing..."; \
+		$(MAKE) install-brew; \
+	fi
+
+# Check if minikube is installed, install if not
+check-minikube:
+	@echo "🔍 Checking for minikube..."
+	@if command -v minikube >/dev/null 2>&1; then \
+		echo "✅ minikube is already installed"; \
+		minikube version; \
+	else \
+		echo "❌ minikube not found. Installing..."; \
+		$(MAKE) install-minikube; \
+	fi
+
+# Install Homebrew
+install-brew:
+	@echo "📦 Installing Homebrew..."
+	@echo "This will install Homebrew using the official installer script..."
+	@/bin/bash -c "$$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	@echo "✅ Homebrew installed successfully"
+	@echo "Please restart your terminal or run 'source ~/.zprofile' to use Homebrew"
+
+# Install colima using Homebrew
+install-colima: check-brew
+	@echo "📦 Installing colima..."
+	@brew install colima
+	@echo "✅ colima installed successfully"
+
+# Install docker using Homebrew
+install-docker: check-brew
+	@echo "📦 Installing docker..."
+	@brew install docker
+	@echo "✅ docker installed successfully"
+
+# Install minikube using Homebrew
+install-minikube: check-brew
+	@echo "📦 Installing minikube..."
+	@brew install minikube
+	@echo "✅ minikube installed successfully"
+
+# Start colima and docker services
+start:
+	@echo "🚀 Starting colima with optimized resources (4 CPUs, 8GB RAM, 60GB disk)..."
+	@colima start --cpu 4 --memory 8 --disk 60
+	@echo "✅ colima started successfully with optimized resources"
+
+# Stop colima
+stop:
+	@echo "🛑 Stopping colima..."
+	@colima stop
+	@echo "✅ colima stopped successfully"
+
+# Start minikube
+start-minikube: check-minikube
+	@echo "🚀 Starting minikube with Kubernetes v1.32.2 (4 CPUs, 6GB RAM)..."
+	@minikube start --driver=docker --kubernetes-version=v1.32.2 --cpus=4 --memory=6144
+	@echo "✅ minikube started successfully with Kubernetes v1.32.2 (4 CPUs, 6GB RAM)"
+
+# Stop minikube
+stop-minikube:
+	@echo "🛑 Stopping minikube..."
+	@minikube stop
+	@echo "✅ minikube stopped successfully"
+
+# Bootstrap minikube with extended timeout for initial setup
+bootstrap: start check-minikube
+	@echo "🚀 Bootstrapping minikube with extended timeout (4 CPUs, 6GB RAM)..."
+	@echo "⏳ This may take several minutes for initial setup..."
+	@minikube start --driver=docker --container-runtime=containerd --kubernetes-version=v1.32.2 --cpus=4 --memory=6144 --wait=apiserver,system_pods,kubelet,default_sa --wait-timeout=10m -v=3
+	@echo "📊 Enabling metrics-server addon..."
+	@minikube addons enable metrics-server
+	@echo "✅ minikube bootstrap completed successfully with Kubernetes v1.32.2 and metrics enabled"
+
+# Renew certificates - clean and regenerate Kubernetes certificates
+renew-certs:
+	@echo "🔐 Renewing Kubernetes certificates..."
+	@echo "🛑 Deleting minikube cluster to regenerate certificates..."
+	@minikube delete || echo "⚠️  minikube not found or already deleted"
+	@echo "🚀 Starting minikube with fresh certificates..."
+	@minikube start --driver=docker --kubernetes-version=v1.32.2 --cpus=4 --memory=6144
+	@echo "✅ Certificate renewal complete! Fresh certificates generated."
+
+# Clean install - delete both colima and minikube VMs and renew certificates
+clean:
+	@echo "🧹 Cleaning up development environment..."
+	@echo "🛑 Stopping and deleting minikube VM..."
+	@minikube delete || echo "⚠️  minikube not found or already deleted"
+	@echo "🛑 Stopping and deleting colima VM..."
+	@colima delete -f || echo "⚠️  colima not found or already deleted"
+	@echo "🔐 Cleaning up Kubernetes certificates and config..."
+	@rm -rf ~/.minikube/certs ~/.minikube/profiles || echo "⚠️  No minikube certs/config to clean"
+	@rm -rf ~/.kube/config || echo "⚠️  No kubectl config to clean"
+	@echo "✅ Clean install complete! All VMs, certificates, and configs have been removed."
+
+# Start colima then minikube
+up: start start-minikube
+	@echo "🚀 All services are up and running!"
+
+# Stop minikube then colima
+down: stop-minikube stop
+	@echo "🛑 All services are stopped!"
+
+# Show help
+help:
+	@echo "🚀 Kubernetes Development Environment Makefile"
+	@echo ""
+	@echo "📋 Available targets:"
+	@echo ""
+	@echo "🔧 Setup & Installation:"
+	@echo "  setup        - Complete setup: check/install colima, docker, and minikube"
+	@echo "  check-brew   - Check if Homebrew is installed (installs if missing)"
+	@echo "  check-colima - Check if colima is installed (installs if missing)"
+	@echo "  check-docker - Check if docker is installed (installs if missing)"
+	@echo "  check-minikube - Check if minikube is installed (installs if missing)"
+	@echo ""
+	@echo "📦 Manual Installation:"
+	@echo "  install-brew - Install Homebrew package manager"
+	@echo "  install-colima - Install colima container runtime"
+	@echo "  install-docker - Install docker CLI tools"
+	@echo "  install-minikube - Install minikube Kubernetes cluster"
+	@echo ""
+	@echo "🎮 Service Management:"
+	@echo "  start        - Start colima with optimized resources (4 CPUs, 8GB RAM, 60GB disk)"
+	@echo "  stop         - Stop colima service"
+	@echo "  start-minikube - Start minikube with Kubernetes v1.32.2 (4 CPUs, 6GB RAM)"
+	@echo "  stop-minikube - Stop minikube cluster"
+	@echo "  bootstrap    - Bootstrap minikube with extended timeout (10min) for initial setup"
+	@echo "  renew-certs  - Renew Kubernetes certificates (stops, cleans certs, restarts)"
+	@echo ""
+	@echo "🚀 Quick Commands:"
+	@echo "  up           - Start colima then minikube (complete dev environment)"
+	@echo "  down         - Stop minikube then colima (clean shutdown)"
+	@echo "  clean        - Delete both colima and minikube VMs + certificates (clean install)"
+	@echo ""
+	@echo "❓ Help:"
+	@echo "  help         - Show this help message"
+	@echo ""
+	@echo "💡 Quick Start:"
+	@echo "  make setup   # Install all tools"
+	@echo "  make up      # Start development environment"
+	@echo "  make down    # Stop development environment"
